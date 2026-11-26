@@ -8396,6 +8396,7 @@ namespace sotc_native
     constexpr uint32_t kScreenCopy = 1u; // a 2D "header" for 0x10f37c8's screen copy
     constexpr uint32_t kPreviousFrame = 2u; // and for feedbackBlur's display buffer (the last frame shown)
     uint32_t g_requested = 0;       // NTO2 header of the last texTransRequest
+    void censusVertex(uint32_t header, float x, float y); // widescreen census (SOTC_GSREG_CENSUS)
 
     struct Assembler
     {
@@ -8577,6 +8578,9 @@ namespace sotc_native
         o.x = ((static_cast<float>(xyz & 0xFFFFu) / 16.0f) - 2048.0f) / 256.0f;
         o.y = -((static_cast<float>((xyz >> 16) & 0xFFFFu) / 16.0f) - 2048.0f) / 224.0f;
         o.nz = 1.0f;
+        static const bool census = ps2_diag::env("SOTC_GSREG_CENSUS") != nullptr;
+        if (census && a.header != kScreenCopy)
+            censusVertex(a.header, o.x, o.y);
         if (a.header == kScreenCopy)
         {
             // The heat haze is depth tested (TEST ZTE, GEQUAL): (x w, y w, w).
@@ -8672,11 +8676,29 @@ namespace sotc_native
 
     // SOTC_GSREG_CENSUS=1: gsReg calls by return address, every 120 frames
     // (resolve with recomp/game/symbols.txt): who draws 2D through gsReg.
+    // Widescreen census (docs/widescreen.md): with SOTC_GSREG_CENSUS=1, the
+    // screen box (2D NDC) of what each (gsReg caller, texture asked for) pair
+    // drew, every 120 frames, to sort each 2D element into an anchor.
+    struct CensusBox
+    {
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+        uint32_t vertices = 0;
+    };
+    uint32_t g_censusRa = 0;
+    std::map<std::pair<uint32_t, uint32_t>, CensusBox> g_censusBoxes;
+    void censusVertex(uint32_t header, float x, float y)
+    {
+        CensusBox &b = g_censusBoxes[{g_censusRa, header}];
+        b.x0 = std::min(b.x0, x), b.x1 = std::max(b.x1, x), b.y0 = std::min(b.y0, y), b.y1 = std::max(b.y1, y);
+        ++b.vertices;
+    }
+
     void gsRegCensus(uint32_t ra)
     {
         static const bool on = ps2_diag::env("SOTC_GSREG_CENSUS") != nullptr;
         if (!on)
             return;
+        g_censusRa = ra;
         static std::unordered_map<uint32_t, uint32_t> calls;
         static uint64_t since = 0;
         ++calls[ra];
@@ -8692,6 +8714,10 @@ namespace sotc_native
             line += item;
         }
         std::fprintf(stderr, "%s\n", line.c_str());
+        for (const auto &[key, b] : g_censusBoxes)
+            std::fprintf(stderr, "[ws-census] frame=%llu ra=%08x tex=%08x n=%u x=[%.3f %.3f] y=[%.3f %.3f]\n",
+                         static_cast<unsigned long long>(g_frame), key.first, key.second, b.vertices, b.x0, b.x1, b.y0, b.y1);
+        g_censusBoxes.clear();
         calls.clear();
         since = g_frame;
     }
