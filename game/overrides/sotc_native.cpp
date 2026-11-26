@@ -389,6 +389,60 @@ namespace sotc_native
     // one frame.
     bool g_wideFrame = false;
     float g_wideAspect = widescreen::kNarrowest;
+    // The game's 2D drawers by the return address of their gsReg calls (the
+    // census in docs/widescreen.md); any other caller is centred.
+    constexpr widescreen::Entry kWide2D[] = {
+        {0x0108A000u, 0x0108A700u, widescreen::Anchor::Full, false},  // fadeScreen, drawDemoBar: fades, cinema bars
+        {0x013F6B20u, 0x013F8958u, widescreen::Anchor::Centre, true}, // the HUD gauges: the edge they are drawn at
+        {0x001C2DD0u, 0x001C3100u, widescreen::Anchor::Right, false}, // the loading indicator (bottom right)
+        // Centred (also the default; listed so the unclassified log stays for new callers):
+        {0x010A24C0u, 0x010A5270u, widescreen::Anchor::Centre, false}, // sprite family: title, menus, the map, pause
+        {0x0134B490u, 0x0134B6F8u, widescreen::Anchor::Centre, false}, // subtitles (their band spans the width: unchanged)
+        {0x013FD000u, 0x013FE800u, widescreen::Anchor::Centre, false}, // text windows (hints)
+        {0x014033F0u, 0x01403558u, widescreen::Anchor::Centre, false}, // title backdrop (spans the width: unchanged)
+        {0x01407700u, 0x01407800u, widescreen::Anchor::Centre, false}, // title
+        {0x0114FD00u, 0x01150278u, widescreen::Anchor::Centre, false}, // spriteDraw*, windowPrintf (windows)
+        {0x01155B98u, 0x01155ED8u, widescreen::Anchor::Centre, false}, // windowSpriteNoTex, windowSprite
+    };
+    // An edge-anchored drawer: its box this frame and the anchor picked the
+    // first frame it was seen, kept until it has been off screen for 120 frames.
+    struct WideEdge
+    {
+        bool decided = false;
+        widescreen::Anchor anchor = widescreen::Anchor::Centre;
+        float x0 = 1e9f, x1 = -1e9f;
+        uint64_t seen = 0;
+    };
+    WideEdge g_wideEdges[sizeof(kWide2D) / sizeof(kWide2D[0])];
+    // The gsReg call being fed (set by Wide2DCall): squeeze its 2D, by this anchor.
+    bool g_wide2D = false;
+    widescreen::Anchor g_wide2DAnchor = widescreen::Anchor::Centre;
+    int g_wide2DEdge = -1;
+    uint32_t g_wide2DUnknownRa = 0; // a caller not in kWide2D (centred; logged once when it draws)
+    struct Wide2DCall
+    {
+        explicit Wide2DCall(uint32_t ra)
+        {
+            if (!g_wideFrame)
+                return;
+            g_wide2D = true;
+            g_wide2DAnchor = widescreen::Anchor::Centre;
+            g_wide2DEdge = -1;
+            g_wide2DUnknownRa = ra;
+            if (const widescreen::Entry *e = widescreen::entryFor(ra, kWide2D, sizeof(kWide2D) / sizeof(kWide2D[0])))
+            {
+                g_wide2DAnchor = e->anchor;
+                g_wide2DUnknownRa = 0;
+                if (e->edge)
+                {
+                    g_wide2DEdge = static_cast<int>(e - kWide2D);
+                    const WideEdge &state = g_wideEdges[g_wide2DEdge];
+                    g_wide2DAnchor = state.decided ? state.anchor : widescreen::Anchor::Centre;
+                }
+            }
+        }
+        ~Wide2DCall() { g_wide2D = false; }
+    };
     uint32_t g_frameDraws = 0;
     uint32_t g_modelDraws = 0; // 3D draws this frame
 
@@ -8131,6 +8185,18 @@ namespace sotc_native
         if (std::memcmp(rdram + kAspectFactor, &factor, 4) != 0)
             std::memcpy(rdram + kAspectFactor, &factor, 4);
         native_renderer::setWideAspect(g_wideFrame ? g_wideAspect : 0.0f);
+        for (WideEdge &e : g_wideEdges)
+        {
+            if (e.x1 >= e.x0)
+            {
+                if (!e.decided)
+                    e.decided = true, e.anchor = widescreen::edgeFor((e.x0 + e.x1) * 0.5f);
+                e.seen = g_frame;
+                e.x0 = 1e9f, e.x1 = -1e9f;
+            }
+            else if (e.decided && g_frame > e.seen + 120u)
+                e.decided = false;
+        }
     }
 
     void syncFrame(uint8_t *rdram)
@@ -8540,7 +8606,39 @@ namespace sotc_native
         job.batch.clear();
     }
 
+    void emit2DRaw(const native_renderer::Vertex &v0, const native_renderer::Vertex &v1, const native_renderer::Vertex &v2);
+
+    // Widescreen (docs/widescreen.md): a 2D triangle the game drew through
+    // gsReg, squeezed back to its shape by its drawer's anchor; one spanning
+    // the whole width (a fade, a band) left as it is. Screen copies and the
+    // last frame's overlay are full-screen layers: unchanged.
     void emit2D(const native_renderer::Vertex &v0, const native_renderer::Vertex &v1, const native_renderer::Vertex &v2)
+    {
+        const Assembler &a = g_2d;
+        if (!g_wide2D || a.header == kScreenCopy || a.header == kPreviousFrame)
+            return emit2DRaw(v0, v1, v2);
+        const float x0 = std::min({v0.x, v1.x, v2.x}), x1 = std::max({v0.x, v1.x, v2.x});
+        if (g_wide2DUnknownRa != 0)
+        {
+            static std::set<uint32_t> logged;
+            if (logged.insert(g_wide2DUnknownRa).second && logged.size() <= 64u)
+                std::fprintf(stderr, "[widescreen] unclassified 2D caller ra %08x (centred)\n", g_wide2DUnknownRa);
+        }
+        if (g_wide2DEdge >= 0)
+        {
+            WideEdge &e = g_wideEdges[g_wide2DEdge];
+            e.x0 = std::min(e.x0, x0), e.x1 = std::max(e.x1, x1);
+        }
+        if (widescreen::spansWidth(x0, x1))
+            return emit2DRaw(v0, v1, v2);
+        const float squeeze = widescreen::squeeze(g_wideAspect), centre = (x0 + x1) * 0.5f;
+        native_renderer::Vertex w[3] = {v0, v1, v2};
+        for (native_renderer::Vertex &v : w)
+            v.x = widescreen::mapX(v.x, g_wide2DAnchor, centre, squeeze);
+        emit2DRaw(w[0], w[1], w[2]);
+    }
+
+    void emit2DRaw(const native_renderer::Vertex &v0, const native_renderer::Vertex &v1, const native_renderer::Vertex &v2)
     {
         Assembler &a = g_2d;
         const uint64_t key = (a.prim & 0x150u) ^ ((a.alpha & 0xFFu) << 12) ^ (static_cast<uint64_t>(a.header) << 20) ^ (static_cast<uint64_t>(a.layer) << 56);
@@ -9140,6 +9238,7 @@ namespace sotc_native
             return gsRegLean(rdram, ctx, runtime);
         const uint32_t ra = GPR_U32(ctx, 31);
         gsRegCensus(ra);
+        const Wide2DCall wide2D(ra);
         // SOTC_LOG_GSREG=<reg>: who writes that register, in which layer, with what (debugging).
         static const int logReg = std::getenv("SOTC_LOG_GSREG") ? static_cast<int>(std::strtol(std::getenv("SOTC_LOG_GSREG"), nullptr, 0)) : -1;
         if (logReg >= 0 && (GPR_U32(ctx, 4) & 0xFFu) == static_cast<uint32_t>(logReg))
@@ -9401,7 +9500,10 @@ namespace sotc_native
             if (!g_s4Hook.async2d)
                 hookJoin(hookjobs::k_gsreg_2d);
             g_2dDefer = g_s4Hook.async2d;
-            feed2D(GPR_U32(ctx, 4) & 0xFFu, GPR_U64(ctx, 5));
+            {
+                const Wide2DCall wide2D(ra);
+                feed2D(GPR_U32(ctx, 4) & 0xFFu, GPR_U64(ctx, 5));
+            }
             g_2dDefer = false;
             break;
         }

@@ -55,4 +55,27 @@ namespace widescreen
     {
         return static_cast<uint32_t>(512.0f * renderScale * (aspect / kNarrowest) + 0.5f);
     }
+
+    const Entry *entryFor(uint32_t ra, const Entry *table, size_t count)
+    {
+        for (size_t i = 0; i < count; ++i)
+            if (ra >= table[i].raLo && ra < table[i].raHi)
+                return &table[i];
+        return nullptr;
+    }
+
+    Anchor edgeFor(float boxCentre)
+    {
+        if (boxCentre < -1.0f / 3.0f)
+            return Anchor::Left;
+        if (boxCentre > 1.0f / 3.0f)
+            return Anchor::Right;
+        return Anchor::Centre;
+    }
+
+    bool spansWidth(float x0, float x1)
+    {
+        constexpr float kEdge = 0.99f, kBeyond = 1.02f;
+        return x0 <= -kEdge && x0 >= -kBeyond && x1 >= kEdge && x1 <= kBeyond;
+    }
 }

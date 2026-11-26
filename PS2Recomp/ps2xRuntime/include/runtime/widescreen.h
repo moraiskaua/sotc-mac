@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 // Widescreen 16:9 (worklist #20, docs/widescreen.md; Mac only).
@@ -45,4 +46,24 @@ namespace widescreen
 
     // The native renderer's target width: 512 x scale, wider by aspect / (4/3).
     uint32_t targetWidth(float renderScale, float aspect);
+
+    // A 2D drawer of the game: the return addresses of its gsReg calls
+    // [raLo, raHi) and its anchor; edge: picked by edgeFor from where it draws
+    // and kept while it stays on screen (the HUD gauges).
+    struct Entry
+    {
+        uint32_t raLo, raHi;
+        Anchor anchor;
+        bool edge;
+    };
+    // The entry whose range holds ra; nullptr: not a known drawer (Centre).
+    const Entry *entryFor(uint32_t ra, const Entry *table, size_t count);
+
+    // An edge-anchored element's anchor by the x (NDC) of its box's centre:
+    // the left third Left, the right third Right, otherwise Centre.
+    Anchor edgeFor(float boxCentre);
+
+    // A triangle from the left edge to the right one (and not beyond the
+    // screen, as the map is): a full-width layer, left unchanged.
+    bool spansWidth(float x0, float x1);
 }

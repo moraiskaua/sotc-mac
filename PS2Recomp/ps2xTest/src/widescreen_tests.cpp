@@ -82,5 +82,38 @@ void register_widescreen_tests()
             t.Equals(widescreen::targetWidth(2.0f, 16.0f / 9.0f), 1365u, "16:9 at 2x");
             t.Equals(widescreen::targetWidth(4.0f, 16.0f / 9.0f), 2731u, "16:9 at 4x");
             t.Equals(widescreen::targetWidth(3.0f, 16.0f / 10.0f), 1843u, "16:10 at 3x");
+        });
+
+        tc.Run("caller table: an address range, low inclusive, high exclusive", [](TestCase &t)
+               {
+            const widescreen::Entry table[] = {
+                {0x0108A000u, 0x0108A700u, Anchor::Full, false},
+                {0x013F6B20u, 0x013F8958u, Anchor::Centre, true},
+            };
+            const widescreen::Entry *e = widescreen::entryFor(0x0108A000u, table, 2);
+            t.IsTrue(e == &table[0], "the low end is in");
+            t.IsTrue(widescreen::entryFor(0x0108A700u, table, 2) == nullptr, "the high end is out");
+            t.IsTrue(widescreen::entryFor(0x013F7178u, table, 2) == &table[1], "a gauge's call");
+        });
+
+        tc.Run("unknown caller: no entry (drawn as Centre)", [](TestCase &t)
+               {
+            const widescreen::Entry table[] = {{0x0108A000u, 0x0108A700u, Anchor::Full, false}};
+            t.IsTrue(widescreen::entryFor(0x01234567u, table, 1) == nullptr, "not in the table");
+        });
+
+        tc.Run("edge anchor: by the third the element sits in", [](TestCase &t)
+               {
+            t.IsTrue(widescreen::edgeFor(-0.8f) == Anchor::Left, "left third");
+            t.IsTrue(widescreen::edgeFor(0.8f) == Anchor::Right, "right third");
+            t.IsTrue(widescreen::edgeFor(0.1f) == Anchor::Centre, "middle");
+        });
+
+        tc.Run("full width: a triangle from edge to edge, not one beyond the screen", [](TestCase &t)
+               {
+            t.IsTrue(widescreen::spansWidth(-1.0f, 1.0f), "edge to edge");
+            t.IsTrue(widescreen::spansWidth(-1.001f, 0.998f), "edge to edge, rounded");
+            t.IsTrue(!widescreen::spansWidth(-0.9f, 1.0f), "short of the left edge");
+            t.IsTrue(!widescreen::spansWidth(-2.7f, 2.5f), "the map, wider than the screen");
         }); });
 }
