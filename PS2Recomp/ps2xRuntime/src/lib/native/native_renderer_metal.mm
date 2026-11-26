@@ -1476,7 +1476,11 @@ fragment float4 bloomComposite(Quad in [[stage_in]], texture2d<float> src [[text
                         const float spread = 1.0f + spreadGrow * static_cast<float>(i);
                         // In PS2 pixels: the texture grows with the render scale.
                         const float k = spread * static_cast<float>(w) / 512.0f;
-                        const float stepH[2] = {k / lw, 0.0f}, stepV[2] = {0.0f, k / lh};
+                        // Widescreen: a PS2 pixel down is h / 448 (w / 512 is one across, wider).
+                        const float kv = static_cast<float>(w) * 448.0f > static_cast<float>(h) * 512.0f * 1.01f
+                                             ? spread * static_cast<float>(h) / 448.0f
+                                             : k;
+                        const float stepH[2] = {k / lw, 0.0f}, stepV[2] = {0.0f, kv / lh};
                         quad(bloomTex[1], blurPipeline, false, [&](id<MTLRenderCommandEncoder> e)
                         {
                             [e setFragmentTexture:bloomTex[0] atIndex:0];
@@ -1647,7 +1651,10 @@ fragment float4 bloomComposite(Quad in [[stage_in]], texture2d<float> src [[text
                     for (int i = 0; i < rounds; ++i)
                     {
                         const float k = static_cast<float>(w) / 512.0f; // PS2 pixels
-                        const float stepH[2] = {k / lw, 0.0f}, stepV[2] = {0.0f, k / lh};
+                        const float kv = static_cast<float>(w) * 448.0f > static_cast<float>(h) * 512.0f * 1.01f
+                                             ? static_cast<float>(h) / 448.0f // widescreen: a PS2 pixel down
+                                             : k;
+                        const float stepH[2] = {k / lw, 0.0f}, stepV[2] = {0.0f, kv / lh};
                         quad(bloomTex[1], blurPipeline, false, [&](id<MTLRenderCommandEncoder> q)
                         {
                             [q setFragmentTexture:bloomTex[0] atIndex:0];

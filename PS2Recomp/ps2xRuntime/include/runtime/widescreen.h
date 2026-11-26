@@ -44,6 +44,10 @@ namespace widescreen
     // constant 0x3FAAAAAA, bit for bit.
     float gameAspectFactor(float aspect, bool progressive);
 
+    // The aspect a finished native frame was drawn for, from its size (a 512 x
+    // 448 frame times the render scale, wider by aspect / (4/3)); 4:3 for none.
+    float frameAspect(uint32_t width, uint32_t height);
+
     // The native renderer's target width: 512 x scale, wider by aspect / (4/3).
     uint32_t targetWidth(float renderScale, float aspect);
 

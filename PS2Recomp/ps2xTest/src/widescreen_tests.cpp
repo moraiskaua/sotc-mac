@@ -115,5 +115,13 @@ void register_widescreen_tests()
             t.IsTrue(widescreen::spansWidth(-1.001f, 0.998f), "edge to edge, rounded");
             t.IsTrue(!widescreen::spansWidth(-0.9f, 1.0f), "short of the left edge");
             t.IsTrue(!widescreen::spansWidth(-2.7f, 2.5f), "the map, wider than the screen");
+        });
+
+        tc.Run("present aspect: from the finished frame's own size", [](TestCase &t)
+               {
+            t.Equals(widescreen::frameAspect(1536u, 1344u), 4.0f / 3.0f, "512 x 448 x 3: 4:3");
+            t.IsTrue(std::fabs(widescreen::frameAspect(2048u, 1344u) - 16.0f / 9.0f) < 1e-5f, "4/3 wider: 16:9");
+            t.IsTrue(std::fabs(widescreen::frameAspect(2173u, 1344u) - 1.8862f) < 1e-3f, "a maximised 1920 x 1018 window's");
+            t.Equals(widescreen::frameAspect(0u, 0u), 4.0f / 3.0f, "no frame yet: 4:3");
         }); });
 }

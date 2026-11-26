@@ -26,7 +26,7 @@ each frame's change:
   (`widescreen::targetWidth`), shown at that aspect (`drawHostFrame`).
 
 Values are written only when they differ: off with a 4:3 save changes no byte.
-F11 or Alt+Enter: borderless full screen. When the option turns on in a window
+F11: borderless full screen. When the option turns on in a window
 narrower than 16:9 (the default one is the PS2's frame), the window is made
 16:9 at the same height.
 
@@ -57,7 +57,10 @@ gauge stays on screen, so a growing or sliding gauge never jumps side.
 ## Census (26/11/2026)
 
 `SOTC_GSREG_CENSUS=1` prints, every 120 frames, `[ws-census] ra tex n x y`: the
-box (2D NDC, -1..1) each (gsReg caller, texture) pair drew. Route: title, New
+box (2D NDC, -1..1) each (caller, texture) pair drew; glEnd's callers are
+tagged with the top bit (`8xxxxxxx`), the immediate quads are `ffffffff`.
+`[widescreen]` logs, once each, a gsReg caller not in the table (centred) and a
+glEnd caller not in it (left as drawn). Route: title, New
 Game, intro skipped, the shrine on foot, pause (map), R1.
 
 | Caller (return addresses) | What | Box | Anchor |
@@ -67,9 +70,9 @@ Game, intro skipped, the shrine on foot, pause (map), R1.
 | 0x108A67C .. 0x108A6DC | cinema bars (drawDemoBar) | full width, top and bottom | Full |
 | 0x10A3C68 .. 0x10A40D4 | sprite family: title logo and menu, the corner text, the map (beyond the screen, +-2.7), the pause box and hints | various | Centre |
 | 0x134B638, 0x134B698 | subtitle band | full width | Full (by its span) |
-| 0x13FDD40 | text windows (hints) | bottom middle | Centre |
+| glEnd from 0x13FE690 | quads placed in the scene (boxes run below the screen) | various | left as drawn |
+| glEnd from 0x1407AAC | title (a point) | middle | left as drawn |
 | 0x14034EC .. 0x140352C | title backdrop | full screen | Full (by its span) |
-| 0x1407728 | title (a point) | middle | Centre |
 | 0x1C2FFC .. 0x1C3080 | loading indicator | bottom right | Right |
 | 0x13F6B20, 0x13F7178, 0x13F75D0 | HUD gauges (from docs/native_renderer_map.md; not on screen on this route) | | Left / Right by where drawn |
 

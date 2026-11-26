@@ -51,6 +51,13 @@ namespace widescreen
         return f;
     }
 
+    float frameAspect(uint32_t width, uint32_t height)
+    {
+        if (width == 0u || height == 0u)
+            return kNarrowest;
+        return static_cast<float>(width) * 448.0f / (static_cast<float>(height) * 512.0f) * kNarrowest;
+    }
+
     uint32_t targetWidth(float renderScale, float aspect)
     {
         return static_cast<uint32_t>(512.0f * renderScale * (aspect / kNarrowest) + 0.5f);
