@@ -196,7 +196,7 @@ it against Metal every second.
 5. **Recompile** to C++ and build. The VU1 microcode was compiled the same
    way.
 
-Details: [README](../README.md#how-it-works).
+Details: [README](../README.md#como-funciona).
 
 ## Decompilation, the next stage
 
