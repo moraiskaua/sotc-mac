@@ -22,17 +22,27 @@ namespace widescreen
         InPlace, // squeezed about its own centre (2D placed at a point of the scene)
     };
 
-    // A 4:3 picture's width in the 16:9 one.
-    constexpr float kSqueeze = 0.75f;
+    constexpr float kNarrowest = 4.0f / 3.0f; // the PS2's picture: no wider than this, bars
+    constexpr float kWidest = 21.0f / 9.0f;
+
+    // The aspect the picture takes: the window's (width / height), from 4:3
+    // to 21:9; 16:9 before the window has a size.
+    float screenAspect(int width, int height);
+
+    // A 4:3 picture's width in one of this aspect (0.75 at 16:9).
+    float squeeze(float aspect);
 
     // x: the 2D NDC (-1 left, 0 centre, 1 right) the game drew at; primCentre:
-    // the primitive's own centre (InPlace only). The x on the wide screen.
-    float mapX(float x, Anchor anchor, float primCentre);
+    // the primitive's own centre (InPlace only); squeeze: squeeze(aspect).
+    // The x on the wide screen.
+    float mapX(float x, Anchor anchor, float primCentre, float squeeze);
 
-    // The factor set_screen_wide_and_progressive (0x1164468) writes at
-    // 0x118FE64 for (wide, progressive), bit for bit.
-    float gameAspectFactor(bool wide, bool progressive);
+    // The factor written at 0x118FE64 for this aspect: what
+    // set_screen_wide_and_progressive (0x1164468) writes, generalised (aspect
+    // / (4/3), times 0.75 progressive); at 16:9 interlaced the game's own
+    // constant 0x3FAAAAAA, bit for bit.
+    float gameAspectFactor(float aspect, bool progressive);
 
-    // The native renderer's target width: 512 x scale, 4/3 of it when wide.
-    uint32_t targetWidth(float renderScale, bool wide);
+    // The native renderer's target width: 512 x scale, wider by aspect / (4/3).
+    uint32_t targetWidth(float renderScale, float aspect);
 }

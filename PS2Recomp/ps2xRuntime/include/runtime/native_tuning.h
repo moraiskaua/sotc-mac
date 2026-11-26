@@ -93,6 +93,11 @@ namespace native_renderer
         // written once to textures/dump/ (SOTC_TEXTURE_DUMP=1).
         bool texturePack = false;
         bool textureDump = false;
+        // Widescreen (worklist #20, runtime/widescreen.h; Mac only): the game's
+        // own 16:9 mode forced on and widened to the window's aspect (4:3 to
+        // 21:9), the picture drawn that much wider and shown so, the 2D squeezed
+        // back to its shape (SOTC_WIDESCREEN=1).
+        bool widescreen = false;
         // The picture shown at most 30 times a second, evenly (SOTC_CAP30).
         // Off by default: above 30 fps (logos, menus, loading) the game
         // thread is held back, and with it every guest thread (in Vita3K's

@@ -17,53 +17,70 @@ void register_widescreen_tests()
 
         tc.Run("full width: unchanged", [](TestCase &t)
                {
-            t.Equals(mapX(-1.0f, Anchor::Full, 0.0f), -1.0f, "left edge");
-            t.Equals(mapX(0.3f, Anchor::Full, 0.0f), 0.3f, "inside");
+            t.Equals(mapX(-1.0f, Anchor::Full, 0.0f, 0.75f), -1.0f, "left edge");
+            t.Equals(mapX(0.3f, Anchor::Full, 0.0f, 0.75f), 0.3f, "inside");
         });
 
         tc.Run("centre: squeezed by 3/4 about the middle", [](TestCase &t)
                {
-            t.Equals(mapX(1.0f, Anchor::Centre, 0.0f), 0.75f, "right edge");
-            t.Equals(mapX(-1.0f, Anchor::Centre, 0.0f), -0.75f, "left edge");
-            t.Equals(mapX(0.0f, Anchor::Centre, 0.0f), 0.0f, "middle");
+            t.Equals(mapX(1.0f, Anchor::Centre, 0.0f, 0.75f), 0.75f, "right edge");
+            t.Equals(mapX(-1.0f, Anchor::Centre, 0.0f, 0.75f), -0.75f, "left edge");
+            t.Equals(mapX(0.0f, Anchor::Centre, 0.0f, 0.75f), 0.0f, "middle");
         });
 
         tc.Run("left anchor: the left edge stays", [](TestCase &t)
                {
-            t.Equals(mapX(-1.0f, Anchor::Left, 0.0f), -1.0f, "left edge");
-            t.Equals(mapX(1.0f, Anchor::Left, 0.0f), 0.5f, "right edge");
+            t.Equals(mapX(-1.0f, Anchor::Left, 0.0f, 0.75f), -1.0f, "left edge");
+            t.Equals(mapX(1.0f, Anchor::Left, 0.0f, 0.75f), 0.5f, "right edge");
         });
 
         tc.Run("right anchor: the right edge stays", [](TestCase &t)
                {
-            t.Equals(mapX(1.0f, Anchor::Right, 0.0f), 1.0f, "right edge");
-            t.Equals(mapX(-1.0f, Anchor::Right, 0.0f), -0.5f, "left edge");
+            t.Equals(mapX(1.0f, Anchor::Right, 0.0f, 0.75f), 1.0f, "right edge");
+            t.Equals(mapX(-1.0f, Anchor::Right, 0.0f, 0.75f), -0.5f, "left edge");
         });
 
         tc.Run("in place: squeezed about the primitive's own centre", [](TestCase &t)
                {
-            t.IsTrue(std::fabs(mapX(0.6f, Anchor::InPlace, 0.5f) - 0.575f) < 1e-6f, "beside the centre");
-            t.Equals(mapX(0.5f, Anchor::InPlace, 0.5f), 0.5f, "the centre itself");
+            t.IsTrue(std::fabs(mapX(0.6f, Anchor::InPlace, 0.5f, 0.75f) - 0.575f) < 1e-6f, "beside the centre");
+            t.Equals(mapX(0.5f, Anchor::InPlace, 0.5f, 0.75f), 0.5f, "the centre itself");
         });
 
         tc.Run("the game's aspect factor (set_screen_wide_and_progressive)", [](TestCase &t)
                {
-            const float wide = widescreen::gameAspectFactor(true, false);
+            const float wide = widescreen::gameAspectFactor(16.0f / 9.0f, false);
             uint32_t bits = 0;
             std::memcpy(&bits, &wide, 4);
-            // The game's own constant (lui 0x3FAA; ori 0xAAAA), not 4.0f / 3.0f (0x3FAAAAAB).
-            t.Equals(bits, 0x3FAAAAAAu, "wide, interlaced: 0x3FAAAAAA");
-            t.Equals(widescreen::gameAspectFactor(true, true), 1.0f, "wide, progressive");
-            t.Equals(widescreen::gameAspectFactor(false, false), 1.0f, "4:3, interlaced");
-            t.Equals(widescreen::gameAspectFactor(false, true), 0.75f, "4:3, progressive");
+            // At 16:9 the game's own constant (lui 0x3FAA; ori 0xAAAA), not 4.0f / 3.0f (0x3FAAAAAB).
+            t.Equals(bits, 0x3FAAAAAAu, "16:9, interlaced: 0x3FAAAAAA");
+            t.Equals(widescreen::gameAspectFactor(16.0f / 9.0f, true), 1.0f, "16:9, progressive");
+            t.Equals(widescreen::gameAspectFactor(4.0f / 3.0f, false), 1.0f, "4:3, interlaced");
+            t.Equals(widescreen::gameAspectFactor(4.0f / 3.0f, true), 0.75f, "4:3, progressive");
+            t.IsTrue(std::fabs(widescreen::gameAspectFactor(16.0f / 10.0f, false) - 1.2f) < 1e-6f, "16:10: wider than 4:3 by 1.2");
         });
 
-        tc.Run("render target width: 4/3 wider when wide", [](TestCase &t)
+        tc.Run("the screen's aspect, clamped to 4:3 .. 21:9", [](TestCase &t)
                {
-            t.Equals(widescreen::targetWidth(3.0f, false), 1536u, "4:3 at 3x");
-            t.Equals(widescreen::targetWidth(3.0f, true), 2048u, "16:9 at 3x");
-            t.Equals(widescreen::targetWidth(1.0f, true), 683u, "16:9 at 1x");
-            t.Equals(widescreen::targetWidth(2.0f, true), 1365u, "16:9 at 2x");
-            t.Equals(widescreen::targetWidth(4.0f, true), 2731u, "16:9 at 4x");
+            t.IsTrue(std::fabs(widescreen::screenAspect(1920, 1018) - 1920.0f / 1018.0f) < 1e-6f, "a maximised window, as it is");
+            t.Equals(widescreen::screenAspect(1024, 1024), 4.0f / 3.0f, "taller than 4:3: 4:3");
+            t.Equals(widescreen::screenAspect(5120, 1440), 21.0f / 9.0f, "wider than 21:9: 21:9");
+            t.Equals(widescreen::screenAspect(0, 0), 16.0f / 9.0f, "no size yet: 16:9");
+        });
+
+        tc.Run("the 2D squeeze: a 4:3 picture's width in the wide one", [](TestCase &t)
+               {
+            t.Equals(widescreen::squeeze(16.0f / 9.0f), 0.75f, "16:9");
+            t.Equals(widescreen::squeeze(4.0f / 3.0f), 1.0f, "4:3: none");
+            t.Equals(mapX(1.0f, Anchor::Centre, 0.0f, 0.5f), 0.5f, "centre at a 0.5 squeeze");
+        });
+
+        tc.Run("render target width: as wide as the screen's aspect", [](TestCase &t)
+               {
+            t.Equals(widescreen::targetWidth(3.0f, 4.0f / 3.0f), 1536u, "4:3 at 3x");
+            t.Equals(widescreen::targetWidth(3.0f, 16.0f / 9.0f), 2048u, "16:9 at 3x");
+            t.Equals(widescreen::targetWidth(1.0f, 16.0f / 9.0f), 683u, "16:9 at 1x");
+            t.Equals(widescreen::targetWidth(2.0f, 16.0f / 9.0f), 1365u, "16:9 at 2x");
+            t.Equals(widescreen::targetWidth(4.0f, 16.0f / 9.0f), 2731u, "16:9 at 4x");
+            t.Equals(widescreen::targetWidth(3.0f, 16.0f / 10.0f), 1843u, "16:10 at 3x");
         }); });
 }

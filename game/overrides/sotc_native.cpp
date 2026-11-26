@@ -31,6 +31,7 @@
 #include "runtime/host_menu.h"
 #include "runtime/native_renderer.h"
 #include "runtime/texture_pack.h"
+#include "runtime/widescreen.h"
 #include "runtime/ps2_diag.h"
 #include "runtime/gs/gs_frontend.h"
 #include "runtime/gs/ps2_gs_psmct32.h"
@@ -382,6 +383,12 @@ namespace sotc_native
     uint64_t g_s4Emits = 0;
     bool g_s4SkipZFog = false; // S4: zFog's hook with the guest zFog left out (s4_disp.cpp)
     uint64_t g_frame = 0;
+    // Widescreen (runtime/widescreen.h): Graphics "Widescreen" and the aspect
+    // the picture takes (the window's, 4:3 .. 21:9; 4:3 when off), as taken at
+    // this frame's change, so a toggle or a resize never mixes two rules in
+    // one frame.
+    bool g_wideFrame = false;
+    float g_wideAspect = widescreen::kNarrowest;
     uint32_t g_frameDraws = 0;
     uint32_t g_modelDraws = 0; // 3D draws this frame
 
@@ -5358,7 +5365,7 @@ namespace sotc_native
         // Drawn larger than the PS2's 512 x 448 (F10 / SOTC_RENDER_SCALE): the
         // geometry has no resolution; the effects measure in PS2 pixels.
         const float scale = std::clamp(native_renderer::tuning().renderScale, native_renderer::kMinRenderScale, native_renderer::kMaxRenderScale);
-        native_renderer::endFrame(static_cast<uint32_t>(512.0f * scale + 0.5f), static_cast<uint32_t>(448.0f * scale + 0.5f));
+        native_renderer::endFrame(widescreen::targetWidth(scale, g_wideAspect), static_cast<uint32_t>(448.0f * scale + 0.5f));
         // SOTC_NATIVE=2: both drawn, the emulated picture shown unless F9
         // asked for the native one (Tuning::bothShowNative).
         static const bool both = std::atoi(std::getenv("SOTC_NATIVE")) == 2;
@@ -8099,6 +8106,33 @@ namespace sotc_native
     A9S_HOIST(bool, a9s_sotc_native_planStats_5998, ps2_diag::env("SOTC_PLAN_STATS") != nullptr); // round A9 sweep (a9sweep.h)
     A9S_HOIST(bool, a9s_sotc_native_cacheLog_6013, ps2_diag::env("SOTC_GL_CACHE_LOG") != nullptr); // round A9 sweep (a9sweep.h)
     A9S_HOIST(bool, a9s_sotc_native_planStats_6038, ps2_diag::env("SOTC_PLAN_STATS") != nullptr); // round A9 sweep (a9sweep.h)
+    // Widescreen 16:9 (worklist #20): the game's own 16:9 mode follows the
+    // Graphics option, which wins over the game's menu (docs/widescreen.md).
+    // Option 2 (_optionWorkChk(2), wide) and the aspect factor
+    // set_screen_wide_and_progressive (0x1164468) would write for it and
+    // option 6 (progressive); written only when they differ, so with the
+    // option off and a 4:3 save no byte changes.
+    void syncWidescreen(uint8_t *rdram)
+    {
+#if defined(__vita__)
+        g_wideFrame = false;
+#else
+        g_wideFrame = native_renderer::tuning().widescreen;
+#endif
+        g_wideAspect = g_wideFrame ? native_renderer::windowAspect() : widescreen::kNarrowest;
+        constexpr uint32_t kOptionWide = 0x11DF750u, kOptionProgressive = 0x11DF760u, kAspectFactor = 0x118FE64u;
+        const uint32_t wide = g_wideFrame ? 1u : 0u;
+        uint32_t option = 0, progressive = 0;
+        std::memcpy(&option, rdram + kOptionWide, 4);
+        std::memcpy(&progressive, rdram + kOptionProgressive, 4);
+        if (option != wide)
+            std::memcpy(rdram + kOptionWide, &wide, 4);
+        const float factor = widescreen::gameAspectFactor(g_wideAspect, progressive != 0);
+        if (std::memcmp(rdram + kAspectFactor, &factor, 4) != 0)
+            std::memcpy(rdram + kAspectFactor, &factor, 4);
+        native_renderer::setWideAspect(g_wideFrame ? g_wideAspect : 0.0f);
+    }
+
     void syncFrame(uint8_t *rdram)
     {
         if (g_ram != rdram) // (read by the model jobs: written once)
@@ -8129,6 +8163,7 @@ namespace sotc_native
                     std::memcpy(g_syncUs, parts, sizeof(g_syncUs));
                 }
             } syncDone{sync, lap};
+            syncWidescreen(rdram);
             hookJoin(hookjobs::k_frame); // the frame's model jobs (round 23)
             lap(kSyncJoin);
             hookjobs::frameEnd();

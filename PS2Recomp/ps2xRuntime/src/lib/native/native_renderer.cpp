@@ -181,6 +181,8 @@ namespace native_renderer
                 d.texturePack = std::atoi(std::getenv("SOTC_TEXTURE_PACK")) != 0;
             if (on("SOTC_TEXTURE_DUMP"))
                 d.textureDump = std::atoi(std::getenv("SOTC_TEXTURE_DUMP")) != 0;
+            if (on("SOTC_WIDESCREEN"))
+                d.widescreen = std::atoi(std::getenv("SOTC_WIDESCREEN")) != 0;
             d.rawMirror = on("SOTC_RAW_MIRROR");
             d.hazeSource = number("SOTC_HAZE_SOURCE", d.hazeSource);
             d.waterSource = number("SOTC_WATER_SOURCE", d.waterSource);
@@ -301,6 +303,8 @@ namespace native_renderer
             add(std::string("SOTC_TEXTURE_PACK=") + (t.texturePack ? "1" : "0"));
         if (t.textureDump != d.textureDump)
             add(std::string("SOTC_TEXTURE_DUMP=") + (t.textureDump ? "1" : "0"));
+        if (t.widescreen != d.widescreen)
+            add(std::string("SOTC_WIDESCREEN=") + (t.widescreen ? "1" : "0"));
         if (t.frameRate != d.frameRate)
             add(std::string("SOTC_CAP20=") + (t.frameRate >= 0.5f ? "1" : "0"));
         if (t.midFrameRedraw != d.midFrameRedraw)
@@ -472,6 +476,13 @@ namespace native_renderer
              "Só Mac: as texturas que têm uma imagem em textures/pack/ (com o nome pelo id da textura, veja Debug \"Extrair texturas\") são "
              "desenhadas com ela, no mesmo tamanho ou em 2x, 4x ou 8x. Desligado: as texturas do próprio jogo.",
              &Tuning::texturePack, nullptr, 0, 1, 1, "SOTC_TEXTURE_PACK"},
+            // Worklist #20: widescreen 16:9 (runtime/widescreen.h).
+            {"widescreen", "Widescreen", "Tela larga",
+             "Mac only: the game's own 16:9 mode, widened to fill the window (4:3 to 21:9; F11: full screen): more of the world at the "
+             "sides, menus and HUD kept in proportion. Off: the PS2's 4:3 picture.",
+             "Só Mac: o modo 16:9 do próprio jogo, aberto até preencher a janela (de 4:3 a 21:9; F11: tela cheia): mais cenário nas "
+             "laterais, menus e HUD na proporção certa. Desligado: a imagem 4:3 do PS2.",
+             &Tuning::widescreen, nullptr, 0, 1, 1, "SOTC_WIDESCREEN"},
             // (Round 62: a menu item on the Vita again, as the user asked; round
             // 64: off by default (the user's choice), a saved value honoured,
             // SOTC_CAP30 over both. On, it caps only the heavy frames: above 150
@@ -786,6 +797,7 @@ namespace native_renderer
             {"texture_filter", 2, "Cost: GPU, small (texture reads).", "Custo: GPU, pequeno (leitura de texturas)."},
             {"texture_pack", 2, "Cost: GPU memory (bigger pictures) and reading the PNGs when an area loads.",
              "Custo: memória da GPU (imagens maiores) e a leitura dos PNGs quando uma área carrega."},
+            {"widescreen", 2, "Cost: GPU (a third more pixels).", "Custo: GPU (um terço a mais de pixels)."},
             {"msaa", 2, nullptr, nullptr},
             {"effect_detail", 2, nullptr, nullptr},
             {"bloom", 3, "Cost: GPU (the bloom chain's small passes and a full-screen composite).", "Custo: GPU (as passadas pequenas do bloom e uma composição na tela inteira)."},
@@ -1275,6 +1287,8 @@ namespace
     native_renderer::detail::Backend *g_backend = nullptr;
     bool g_tried = false;
     std::atomic<bool> g_shown{false};
+    std::atomic<float> g_wideAspect{0.0f};          // widescreen: the aspect the picture is shown at (0: 4:3)
+    std::atomic<float> g_windowAspect{16.0f / 9.0f}; // widescreen: the window's (runtime/widescreen.h screenAspect)
     std::function<void()> g_glMakeCurrent;
     std::function<void(uint32_t, uint32_t, uint32_t)> g_presentHook;
 
@@ -3091,6 +3105,10 @@ namespace native_renderer
     }
     void setShown(bool shown) { g_shown.store(shown, std::memory_order_relaxed); }
     bool shown() { return g_shown.load(std::memory_order_relaxed); }
+    void setWideAspect(float aspect) { g_wideAspect.store(aspect, std::memory_order_relaxed); }
+    float wideAspect() { return g_wideAspect.load(std::memory_order_relaxed); }
+    void setWindowAspect(float aspect) { g_windowAspect.store(aspect, std::memory_order_relaxed); }
+    float windowAspect() { return g_windowAspect.load(std::memory_order_relaxed); }
     bool latestFrame(std::vector<uint8_t> &rgba, uint32_t &width, uint32_t &height)
     {
         // Not backend(): the presenting thread must not create it.
