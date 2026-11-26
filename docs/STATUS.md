@@ -127,6 +127,12 @@ each texture decoded from then on to `textures/dump/<id>.png`.
 `SOTC_TEXTURE_PACK=1`, `SOTC_TEXTURE_DUMP=1`. See
 [texture_packs.md](texture_packs.md).
 
+Widescreen (`widescreen`, Mac only, not in any preset, live): the game's own
+16:9 mode, widened to the window's aspect (4:3 to 21:9), the picture drawn
+that much wider; the game's 2D squeezed back to its shape (the HUD at the
+edges, menus and text centred, fades and bars full width). F11 or Alt+Enter:
+borderless full screen. `SOTC_WIDESCREEN=1`. See [widescreen.md](widescreen.md).
+
 **Measuring.** A `[gfx124] frame F preset P key=value ...` line at start and
 whenever any preset item changes (menu, F10, A/B); every `[frame]` line ends
 with `| gfx <preset>` and `[stats]` has `gfx=<preset>`.
