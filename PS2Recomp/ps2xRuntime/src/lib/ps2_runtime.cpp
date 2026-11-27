@@ -3565,6 +3565,10 @@ void PS2Runtime::run()
             }
             wideBefore = wideNow;
 #endif
+            // A controller connected after the start: logged (its GUID when unmapped).
+            static uint32_t padPoll = 0;
+            if (++padPoll % 60u == 0u)
+                PSPadBackend::pollControllers();
             if (IsKeyPressed(KEY_F9))
             {
                 native_renderer::Tuning &t = native_renderer::tuning();
