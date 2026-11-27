@@ -1,0 +1,29 @@
+name: tests
+
+# ps2x_tests on Apple Silicon (the Mac port's platform), through tools/ci_tests.sh:
+# the suites that pass on the Mac must stay green; the known-failing ones are
+# reported in the log without failing the run. The game itself is not built
+# here (it needs the disc).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: ps2x_tests (macOS, Apple Silicon)
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install ninja pkg-config ffmpeg
+
+      - name: Gate (suites that pass on the Mac)
+        run: tools/ci_tests.sh build/tests
+
+      - name: Known failing suites (report only)
+        if: always()
+        continue-on-error: true
+        run: tools/ci_tests.sh build/tests --report
