@@ -592,6 +592,24 @@ fragment float4 bloomComposite(Quad in [[stage_in]], texture2d<float> src [[text
         std::vector<uint8_t> output;
         uint32_t outputWidth = 0, outputHeight = 0;
         bool hasOutput = false;
+        // The finished picture comes back without the game thread waiting for the
+        // GPU: each frame's command buffer copies its colour into a staging buffer
+        // and a completion handler copies that into `output`. At most kInFlight
+        // frames are on the GPU (each with its own staging buffer); render() waits
+        // only when the GPU is that far behind, so the game's next frame is made
+        // while the GPU draws this one.
+        static constexpr int kInFlight = 2;
+        dispatch_semaphore_t inFlight = dispatch_semaphore_create(kInFlight);
+        id<MTLBuffer> staging[kInFlight] = {};
+        uint64_t frameIndex = 0;
+        // Every frame sent to the GPU finished and its picture in `output`.
+        void finishInFlight()
+        {
+            for (int i = 0; i < kInFlight; ++i)
+                dispatch_semaphore_wait(inFlight, DISPATCH_TIME_FOREVER);
+            for (int i = 0; i < kInFlight; ++i)
+                dispatch_semaphore_signal(inFlight);
+        }
 
         bool init()
         {
@@ -1059,6 +1077,7 @@ fragment float4 bloomComposite(Quad in [[stage_in]], texture2d<float> src [[text
         {
             @autoreleasepool
             {
+                dispatch_semaphore_wait(inFlight, DISPATCH_TIME_FOREVER); // at most kInFlight frames on the GPU
                 {
                     // The player's quality: MSAA as far as the GPU has it, the mirror's size.
                     const native_renderer::Tuning &q = native_renderer::tuning();
@@ -1476,7 +1495,11 @@ fragment float4 bloomComposite(Quad in [[stage_in]], texture2d<float> src [[text
                         const float spread = 1.0f + spreadGrow * static_cast<float>(i);
                         // In PS2 pixels: the texture grows with the render scale.
                         const float k = spread * static_cast<float>(w) / 512.0f;
-                        const float stepH[2] = {k / lw, 0.0f}, stepV[2] = {0.0f, k / lh};
+                        // Widescreen: a PS2 pixel down is h / 448 (w / 512 is one across, wider).
+                        const float kv = static_cast<float>(w) * 448.0f > static_cast<float>(h) * 512.0f * 1.01f
+                                             ? spread * static_cast<float>(h) / 448.0f
+                                             : k;
+                        const float stepH[2] = {k / lw, 0.0f}, stepV[2] = {0.0f, kv / lh};
                         quad(bloomTex[1], blurPipeline, false, [&](id<MTLRenderCommandEncoder> e)
                         {
                             [e setFragmentTexture:bloomTex[0] atIndex:0];
@@ -1647,7 +1670,10 @@ fragment float4 bloomComposite(Quad in [[stage_in]], texture2d<float> src [[text
                     for (int i = 0; i < rounds; ++i)
                     {
                         const float k = static_cast<float>(w) / 512.0f; // PS2 pixels
-                        const float stepH[2] = {k / lw, 0.0f}, stepV[2] = {0.0f, k / lh};
+                        const float kv = static_cast<float>(w) * 448.0f > static_cast<float>(h) * 512.0f * 1.01f
+                                             ? static_cast<float>(h) / 448.0f // widescreen: a PS2 pixel down
+                                             : k;
+                        const float stepH[2] = {k / lw, 0.0f}, stepV[2] = {0.0f, kv / lh};
                         quad(bloomTex[1], blurPipeline, false, [&](id<MTLRenderCommandEncoder> q)
                         {
                             [q setFragmentTexture:bloomTex[0] atIndex:0];
@@ -1819,14 +1845,33 @@ fragment float4 bloomComposite(Quad in [[stage_in]], texture2d<float> src [[text
                     [keep copyFromTexture:color toTexture:previousColor];
                     [keep endEncoding];
                 }
+                // The picture into this frame's staging buffer, read back when the GPU is done.
+                const size_t bytes = static_cast<size_t>(w) * h * 4u;
+                id<MTLBuffer> &slot = staging[frameIndex++ % kInFlight];
+                if (!slot || slot.length < bytes)
+                {
+                    [slot release]; // (a frame still in flight holds its own reference: the command buffer's, the handler's)
+                    slot = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+                }
+                {
+                    id<MTLBlitCommandEncoder> copy = [commands blitCommandEncoder];
+                    [copy copyFromTexture:color sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
+                                 toBuffer:slot destinationOffset:0 destinationBytesPerRow:w * 4u destinationBytesPerImage:bytes];
+                    [copy endEncoding];
+                }
+                id<MTLBuffer> done = slot;
+                [commands addCompletedHandler:^(id<MTLCommandBuffer>) {
+                    {
+                        std::lock_guard<std::mutex> lock(outputMutex);
+                        output.resize(bytes);
+                        std::memcpy(output.data(), done.contents, bytes);
+                        outputWidth = w;
+                        outputHeight = h;
+                        hasOutput = true;
+                    }
+                    dispatch_semaphore_signal(inFlight);
+                }];
                 [commands commit];
-                [commands waitUntilCompleted];
-                std::lock_guard<std::mutex> lock(outputMutex);
-                output.resize(static_cast<size_t>(w) * h * 4u);
-                [color getBytes:output.data() bytesPerRow:w * 4u fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
-                outputWidth = w;
-                outputHeight = h;
-                hasOutput = true;
             }
         }
     };
@@ -1885,6 +1930,7 @@ fragment float4 bloomComposite(Quad in [[stage_in]], texture2d<float> src [[text
         void setGlowComposite(const native_renderer::GlowComposite &glow) override { r->glow = glow; }
         void setDepthOfField(const native_renderer::DepthOfField &dof) override { r->dof = dof; }
         void endFrame(uint32_t width, uint32_t height) override { r->render(width, height); }
+        void finishFrames() override { r->finishInFlight(); }
         bool latestFrame(std::vector<uint8_t> &rgba, uint32_t &width, uint32_t &height) override
         {
             std::lock_guard<std::mutex> lock(r->outputMutex);

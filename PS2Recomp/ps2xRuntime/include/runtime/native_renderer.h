@@ -427,6 +427,12 @@ namespace native_renderer
     // Shown instead of the emulated picture (the emulator's present path asks).
     void setShown(bool shown);
     bool shown();
+    // Widescreen (runtime/widescreen.h): the aspect the game's picture is shown
+    // at (0: the PS2's 4:3), and the window's, which the wide picture follows.
+    void setWideAspect(float aspect);
+    float wideAspect();
+    void setWindowAspect(float aspect);
+    float windowAspect();
     // The last finished frame (RGBA8); false before the first.
     bool latestFrame(std::vector<uint8_t> &rgba, uint32_t &width, uint32_t &height);
     // SOTC_BLOOM_DUMP=1 (the OpenGL renderer): the bloom chain's targets of

@@ -3902,7 +3902,11 @@ float4 main(float4 vUV : TEXCOORD0, uniform sampler2D uSrc, uniform sampler2D uS
             {
                 const float spread = 1.0f + spreadGrow * static_cast<float>(i);
                 const float k = spread * static_cast<float>(width) / 512.0f; // PS2 pixels: the texture grows with the render scale
-                const float h[4] = {k / lw, 0, 0, 0}, v[4] = {0, k / lh, 0, 0};
+                // Widescreen: a PS2 pixel down is height / 448 (width / 512 is one across, wider).
+                const float kv = static_cast<float>(width) * 448.0f > static_cast<float>(height) * 512.0f * 1.01f
+                                     ? spread * static_cast<float>(height) / 448.0f
+                                     : k;
+                const float h[4] = {k / lw, 0, 0, 0}, v[4] = {0, kv / lh, 0, 0};
                 bindTexture(0, bloomTex[0].texture);
                 quad(bloomTex[1], 1, QuadBlend::None, h);
                 bindTexture(0, bloomTex[1].texture);
@@ -8046,7 +8050,10 @@ float4 main(float4 vUV : TEXCOORD0, uniform sampler2D uSrc, uniform sampler2D uS
                 float uv[4], clampTo[4];
                 sh.uvOf(a0, uv);
                 sh.clampOf(a0, clampTo);
-                const float down[4] = {0, k / static_cast<float>(a0.height), 0, 0};
+                const float kv = static_cast<float>(width) * 448.0f > static_cast<float>(height) * 512.0f * 1.01f
+                                     ? static_cast<float>(height) / 448.0f // widescreen: a PS2 pixel down
+                                     : k;
+                const float down[4] = {0, kv / static_cast<float>(a0.height), 0, 0};
                 bindTexture(0, a0.texture);
                 quadRegion(a1, sh, 1, QuadBlend::None, down, nullptr, uv, clampTo);
                 shadowFrom.region = true;

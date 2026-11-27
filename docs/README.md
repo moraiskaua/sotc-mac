@@ -15,6 +15,7 @@ S2 da colisão), e `<área>_map.md` é o mapa de uma área do jogo.
 | [worklist.md](worklist.md) | lista de trabalho em aberto |
 | [runtime_switches.md](runtime_switches.md) | todas as chaves de runtime (`PS2X_*`, `SOTC_*`) |
 | [texture_packs.md](texture_packs.md) | trocar texturas por PNGs |
+| [widescreen.md](widescreen.md) | tela larga: o 16:9 do próprio jogo aberto até a janela, o 2D corrigido |
 
 ## Mapas das áreas do jogo
 

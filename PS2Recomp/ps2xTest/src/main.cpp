@@ -19,9 +19,10 @@ void register_ps2_sif_dma_tests();
 void register_ps2_recompiler_tests();
 void register_ps2_runtime_expansion_tests();
 void register_texture_pack_tests();
+void register_widescreen_tests();
 void reset_ps2_test_function_table();
 
-int main()
+int main(int argc, char **argv)
 {
     MiniTest::BeforeEach(reset_ps2_test_function_table);
 
@@ -42,7 +43,8 @@ int main()
     register_ps2_recompiler_tests();
     register_ps2_runtime_expansion_tests();
     register_texture_pack_tests();
-    int res = MiniTest::Run();
+    register_widescreen_tests();
+    int res = MiniTest::Run(argc > 1 ? argv[1] : ""); // ps2x_tests <suite>: that suite only
     std::cout.flush();
     std::cerr.flush();
     std::_Exit(res);

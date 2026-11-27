@@ -88,6 +88,10 @@ Pontos úteis do menu:
   (`SOTC_CAP20`). No Vita as cenas ficam sempre limitadas a 30 fps.
 - **Gráficos → Pacote de texturas** e **Debug → Extrair texturas**: troca de texturas
   por PNGs seus ([docs/texture_packs.md](docs/texture_packs.md)).
+- **Gráficos → Tela larga** (`SOTC_WIDESCREEN=1`): o modo 16:9 do próprio
+  jogo, aberto até preencher a janela, com HUD nos cantos e menus na
+  proporção certa. **F11**: tela cheia
+  ([docs/widescreen.md](docs/widescreen.md)).
 - **Debug**: muda as chaves de desenvolvimento ao vivo, sem editar `env.txt`
   nem reiniciar. Também tem **Marcar este momento** (escreve `[mark]` no log),
   **Painel de desempenho** (`SOTC_PERF_OVERLAY=1`) e **Gravar cena**, que

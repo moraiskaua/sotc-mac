@@ -31,6 +31,7 @@
 #include "runtime/host_menu.h"
 #include "runtime/native_renderer.h"
 #include "runtime/texture_pack.h"
+#include "runtime/widescreen.h"
 #include "runtime/ps2_diag.h"
 #include "runtime/gs/gs_frontend.h"
 #include "runtime/gs/ps2_gs_psmct32.h"
@@ -382,6 +383,63 @@ namespace sotc_native
     uint64_t g_s4Emits = 0;
     bool g_s4SkipZFog = false; // S4: zFog's hook with the guest zFog left out (s4_disp.cpp)
     uint64_t g_frame = 0;
+    // Widescreen (runtime/widescreen.h): Graphics "Widescreen" and the aspect
+    // the picture takes (the window's, 4:3 .. 21:9; 4:3 when off), as taken at
+    // this frame's change, so a toggle or a resize never mixes two rules in
+    // one frame.
+    bool g_wideFrame = false;
+    float g_wideAspect = widescreen::kNarrowest;
+    // The aspect the frame now finishing (resolved by endFrame) was drawn at:
+    // a toggle or a resize applies from the next frame on, never to this one.
+    float g_wideDoneAspect = widescreen::kNarrowest;
+    // The game's 2D drawers by the return address of their gsReg calls (the
+    // census in docs/widescreen.md); any other caller is centred.
+    constexpr widescreen::Entry kWide2D[] = {
+        {0x0108A000u, 0x0108A700u, widescreen::Anchor::Full, false},  // fadeScreen, drawDemoBar: fades, cinema bars
+        {0x013F6B20u, 0x013F8958u, widescreen::Anchor::Centre, true}, // the HUD gauges: the edge they are drawn at
+        {0x001C2DD0u, 0x001C3100u, widescreen::Anchor::Right, false}, // the loading indicator (bottom right)
+        // Centred (also the default; listed so the unclassified log stays for new callers):
+        {0x010A24C0u, 0x010A5270u, widescreen::Anchor::Centre, false}, // sprite family: title, menus, the map, pause
+        {0x0134B490u, 0x0134B6F8u, widescreen::Anchor::Centre, false}, // subtitles (their band spans the width: unchanged)
+        {0x014033F0u, 0x01403558u, widescreen::Anchor::Centre, false}, // title backdrop (spans the width: unchanged)
+        {0x0114FD00u, 0x01150278u, widescreen::Anchor::Centre, false}, // spriteDraw*, windowPrintf (windows)
+        {0x01155B98u, 0x01155ED8u, widescreen::Anchor::Centre, false}, // windowSpriteNoTex, windowSprite
+    };
+    // An edge-anchored drawer: its box this frame and the anchor picked the
+    // first frame it was seen, kept until it has been off screen for 120 frames.
+    struct WideEdge
+    {
+        bool decided = false;
+        widescreen::Anchor anchor = widescreen::Anchor::Centre;
+        float x0 = 1e9f, x1 = -1e9f;
+        uint64_t seen = 0;
+    };
+    WideEdge g_wideEdges[sizeof(kWide2D) / sizeof(kWide2D[0])];
+    // The 2D drawer being fed (set by Wide2DCall for the length of one gsReg
+    // or glEnd call); emit2D resolves its anchor when it draws, after the
+    // frame's change, so a toggle never squeezes one call of the old frame.
+    bool g_wide2D = false;
+    uint32_t g_wide2DRa = 0;
+    const widescreen::Entry *g_wide2DEntry = nullptr; // nullptr: not in the table
+    bool g_wide2DGl = false; // a glEnd call: drawn at scene points unless listed
+    // glEnd's callers whose quads are screen-pixel 2D (the census in
+    // docs/widescreen.md); any other glEnd caller (particle quads, the heat
+    // haze, the boss-death fan) is placed by the wide projection already.
+    constexpr widescreen::Entry kWideGl[] = {
+        {0x00000000u, 0x00000000u, widescreen::Anchor::Centre, false}, // (none found by the census; [widescreen] logs the callers)
+    };
+    struct Wide2DCall
+    {
+        Wide2DCall(uint32_t ra, bool gl)
+        {
+            g_wide2D = true;
+            g_wide2DRa = ra;
+            g_wide2DGl = gl;
+            g_wide2DEntry = gl ? widescreen::entryFor(ra, kWideGl, sizeof(kWideGl) / sizeof(kWideGl[0]))
+                               : widescreen::entryFor(ra, kWide2D, sizeof(kWide2D) / sizeof(kWide2D[0]));
+        }
+        ~Wide2DCall() { g_wide2D = false; }
+    };
     uint32_t g_frameDraws = 0;
     uint32_t g_modelDraws = 0; // 3D draws this frame
 
@@ -5358,7 +5416,7 @@ namespace sotc_native
         // Drawn larger than the PS2's 512 x 448 (F10 / SOTC_RENDER_SCALE): the
         // geometry has no resolution; the effects measure in PS2 pixels.
         const float scale = std::clamp(native_renderer::tuning().renderScale, native_renderer::kMinRenderScale, native_renderer::kMaxRenderScale);
-        native_renderer::endFrame(static_cast<uint32_t>(512.0f * scale + 0.5f), static_cast<uint32_t>(448.0f * scale + 0.5f));
+        native_renderer::endFrame(widescreen::targetWidth(scale, g_wideDoneAspect), static_cast<uint32_t>(448.0f * scale + 0.5f));
         // SOTC_NATIVE=2: both drawn, the emulated picture shown unless F9
         // asked for the native one (Tuning::bothShowNative).
         static const bool both = std::atoi(std::getenv("SOTC_NATIVE")) == 2;
@@ -8099,6 +8157,46 @@ namespace sotc_native
     A9S_HOIST(bool, a9s_sotc_native_planStats_5998, ps2_diag::env("SOTC_PLAN_STATS") != nullptr); // round A9 sweep (a9sweep.h)
     A9S_HOIST(bool, a9s_sotc_native_cacheLog_6013, ps2_diag::env("SOTC_GL_CACHE_LOG") != nullptr); // round A9 sweep (a9sweep.h)
     A9S_HOIST(bool, a9s_sotc_native_planStats_6038, ps2_diag::env("SOTC_PLAN_STATS") != nullptr); // round A9 sweep (a9sweep.h)
+    // Widescreen 16:9 (worklist #20): the game's own 16:9 mode follows the
+    // Graphics option, which wins over the game's menu (docs/widescreen.md).
+    // Option 2 (_optionWorkChk(2), wide) and the aspect factor
+    // set_screen_wide_and_progressive (0x1164468) would write for it and
+    // option 6 (progressive); written only when they differ, so with the
+    // option off and a 4:3 save no byte changes.
+    void syncWidescreen(uint8_t *rdram)
+    {
+        g_wideDoneAspect = g_wideAspect;
+#if defined(__vita__)
+        // Vita: off, the game's own option and factor left as the game sets them.
+        (void)rdram;
+        return;
+#else
+        g_wideFrame = native_renderer::tuning().widescreen;
+#endif
+        g_wideAspect = g_wideFrame ? native_renderer::windowAspect() : widescreen::kNarrowest;
+        constexpr uint32_t kOptionWide = 0x11DF750u, kOptionProgressive = 0x11DF760u, kAspectFactor = 0x118FE64u;
+        const uint32_t wide = g_wideFrame ? 1u : 0u;
+        uint32_t option = 0, progressive = 0;
+        std::memcpy(&option, rdram + kOptionWide, 4);
+        std::memcpy(&progressive, rdram + kOptionProgressive, 4);
+        if (option != wide)
+            std::memcpy(rdram + kOptionWide, &wide, 4);
+        const float factor = widescreen::gameAspectFactor(g_wideAspect, progressive != 0);
+        if (std::memcmp(rdram + kAspectFactor, &factor, 4) != 0)
+            std::memcpy(rdram + kAspectFactor, &factor, 4);
+        native_renderer::setWideAspect(g_wideFrame ? g_wideAspect : 0.0f);
+        for (WideEdge &e : g_wideEdges)
+        {
+            if (e.x1 >= e.x0)
+            {
+                e.seen = g_frame;
+                e.x0 = 1e9f, e.x1 = -1e9f;
+            }
+            else if (e.decided && g_frame > e.seen + 120u)
+                e.decided = false;
+        }
+    }
+
     void syncFrame(uint8_t *rdram)
     {
         if (g_ram != rdram) // (read by the model jobs: written once)
@@ -8129,6 +8227,7 @@ namespace sotc_native
                     std::memcpy(g_syncUs, parts, sizeof(g_syncUs));
                 }
             } syncDone{sync, lap};
+            syncWidescreen(rdram);
             hookJoin(hookjobs::k_frame); // the frame's model jobs (round 23)
             lap(kSyncJoin);
             hookjobs::frameEnd();
@@ -8361,6 +8460,7 @@ namespace sotc_native
     constexpr uint32_t kScreenCopy = 1u; // a 2D "header" for 0x10f37c8's screen copy
     constexpr uint32_t kPreviousFrame = 2u; // and for feedbackBlur's display buffer (the last frame shown)
     uint32_t g_requested = 0;       // NTO2 header of the last texTransRequest
+    void censusVertex(uint32_t header, float x, float y); // widescreen census (SOTC_GSREG_CENSUS)
 
     struct Assembler
     {
@@ -8504,7 +8604,54 @@ namespace sotc_native
         job.batch.clear();
     }
 
+    void emit2DRaw(const native_renderer::Vertex &v0, const native_renderer::Vertex &v1, const native_renderer::Vertex &v2);
+
+    // Widescreen (docs/widescreen.md): a 2D triangle the game drew through
+    // gsReg, squeezed back to its shape by its drawer's anchor; one spanning
+    // the whole width (a fade, a band) left as it is. Screen copies and the
+    // last frame's overlay are full-screen layers: unchanged.
     void emit2D(const native_renderer::Vertex &v0, const native_renderer::Vertex &v1, const native_renderer::Vertex &v2)
+    {
+        const Assembler &a = g_2d;
+        if (!g_wide2D || !g_wideFrame || a.header == kScreenCopy || a.header == kPreviousFrame)
+            return emit2DRaw(v0, v1, v2);
+        const widescreen::Entry *e = g_wide2DEntry;
+        if (!e && g_wide2DGl)
+        {
+            // A glEnd caller not listed: scene-placed, left as drawn (logged once:
+            // a screen-pixel one found in play goes into kWideGl).
+            static std::set<uint32_t> logged;
+            if (logged.insert(g_wide2DRa).second && logged.size() <= 64u)
+                std::fprintf(stderr, "[widescreen] gl caller ra %08x left as drawn\n", g_wide2DRa);
+            return emit2DRaw(v0, v1, v2);
+        }
+        const float x0 = std::min({v0.x, v1.x, v2.x}), x1 = std::max({v0.x, v1.x, v2.x});
+        widescreen::Anchor anchor = e ? e->anchor : widescreen::Anchor::Centre;
+        if (!e)
+        {
+            static std::set<uint32_t> logged;
+            if (logged.insert(g_wide2DRa).second && logged.size() <= 64u)
+                std::fprintf(stderr, "[widescreen] unclassified 2D caller ra %08x (centred)\n", g_wide2DRa);
+        }
+        else if (e->edge)
+        {
+            // Picked from the first triangle it draws, kept while it stays on screen.
+            WideEdge &state = g_wideEdges[e - kWide2D];
+            if (!state.decided)
+                state.decided = true, state.anchor = widescreen::edgeFor((x0 + x1) * 0.5f);
+            state.x0 = std::min(state.x0, x0), state.x1 = std::max(state.x1, x1);
+            anchor = state.anchor;
+        }
+        if (widescreen::spansWidth(x0, x1))
+            return emit2DRaw(v0, v1, v2);
+        const float squeeze = widescreen::squeeze(g_wideAspect), centre = (x0 + x1) * 0.5f;
+        native_renderer::Vertex w[3] = {v0, v1, v2};
+        for (native_renderer::Vertex &v : w)
+            v.x = widescreen::mapX(v.x, anchor, centre, squeeze);
+        emit2DRaw(w[0], w[1], w[2]);
+    }
+
+    void emit2DRaw(const native_renderer::Vertex &v0, const native_renderer::Vertex &v1, const native_renderer::Vertex &v2)
     {
         Assembler &a = g_2d;
         const uint64_t key = (a.prim & 0x150u) ^ ((a.alpha & 0xFFu) << 12) ^ (static_cast<uint64_t>(a.header) << 20) ^ (static_cast<uint64_t>(a.layer) << 56);
@@ -8542,6 +8689,9 @@ namespace sotc_native
         o.x = ((static_cast<float>(xyz & 0xFFFFu) / 16.0f) - 2048.0f) / 256.0f;
         o.y = -((static_cast<float>((xyz >> 16) & 0xFFFFu) / 16.0f) - 2048.0f) / 224.0f;
         o.nz = 1.0f;
+        static const bool census = ps2_diag::env("SOTC_GSREG_CENSUS") != nullptr;
+        if (census && a.header != kScreenCopy)
+            censusVertex(a.header, o.x, o.y);
         if (a.header == kScreenCopy)
         {
             // The heat haze is depth tested (TEST ZTE, GEQUAL): (x w, y w, w).
@@ -8637,11 +8787,39 @@ namespace sotc_native
 
     // SOTC_GSREG_CENSUS=1: gsReg calls by return address, every 120 frames
     // (resolve with recomp/game/symbols.txt): who draws 2D through gsReg.
+    // Widescreen census (docs/widescreen.md): with SOTC_GSREG_CENSUS=1, the
+    // screen box (2D NDC) of what each (gsReg caller, texture asked for) pair
+    // drew, every 120 frames, to sort each 2D element into an anchor.
+    struct CensusBox
+    {
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+        uint32_t vertices = 0;
+    };
+    uint32_t g_censusRa = 0;
+    // The caller the census credits while it is in scope (0 after: a feed
+    // from elsewhere is not credited to the last gsReg).
+    struct CensusCaller
+    {
+        uint32_t saved;
+        explicit CensusCaller(uint32_t ra) : saved(g_censusRa) { g_censusRa = ra; }
+        ~CensusCaller() { g_censusRa = saved; }
+    };
+    std::map<std::pair<uint32_t, uint32_t>, CensusBox> g_censusBoxes;
+    void censusVertex(uint32_t header, float x, float y)
+    {
+        if (g_censusRa == 0u)
+            return;
+        CensusBox &b = g_censusBoxes[{g_censusRa, header}];
+        b.x0 = std::min(b.x0, x), b.x1 = std::max(b.x1, x), b.y0 = std::min(b.y0, y), b.y1 = std::max(b.y1, y);
+        ++b.vertices;
+    }
+
     void gsRegCensus(uint32_t ra)
     {
         static const bool on = ps2_diag::env("SOTC_GSREG_CENSUS") != nullptr;
         if (!on)
             return;
+        (void)ra;
         static std::unordered_map<uint32_t, uint32_t> calls;
         static uint64_t since = 0;
         ++calls[ra];
@@ -8657,6 +8835,10 @@ namespace sotc_native
             line += item;
         }
         std::fprintf(stderr, "%s\n", line.c_str());
+        for (const auto &[key, b] : g_censusBoxes)
+            std::fprintf(stderr, "[ws-census] frame=%llu ra=%08x tex=%08x n=%u x=[%.3f %.3f] y=[%.3f %.3f]\n",
+                         static_cast<unsigned long long>(g_frame), key.first, key.second, b.vertices, b.x0, b.x1, b.y0, b.y1);
+        g_censusBoxes.clear();
         calls.clear();
         since = g_frame;
     }
@@ -8925,6 +9107,8 @@ namespace sotc_native
             }
             g_2dDefer = async;
             // Round 128 (SOTC_IMM128_CHECK): the first glEnd after imm128's check armed it, recorded.
+            const Wide2DCall wide2D(ra, true);
+            const CensusCaller census(ra | 0x80000000u); // census: glEnd's caller, tagged
             std::vector<uint64_t> *rec = g_immRec128;
             if (rec)
             {
@@ -8980,6 +9164,7 @@ namespace sotc_native
             g_requested = kScreenCopy;
         g_layers.push_back(layer);
         g_2dDefer = async;
+        const CensusCaller census(0xFFFFFFFFu); // census: the immediate quads (no caller)
         for (uint32_t i = 0; i < count; ++i)
             feed2D(static_cast<uint32_t>(pairs[2u * i + 1u]) & 0xFFu, pairs[2u * i]);
         g_2dDefer = false;
@@ -9079,6 +9264,8 @@ namespace sotc_native
             return gsRegLean(rdram, ctx, runtime);
         const uint32_t ra = GPR_U32(ctx, 31);
         gsRegCensus(ra);
+        const Wide2DCall wide2D(ra, false);
+        const CensusCaller census(ra);
         // SOTC_LOG_GSREG=<reg>: who writes that register, in which layer, with what (debugging).
         static const int logReg = std::getenv("SOTC_LOG_GSREG") ? static_cast<int>(std::strtol(std::getenv("SOTC_LOG_GSREG"), nullptr, 0)) : -1;
         if (logReg >= 0 && (GPR_U32(ctx, 4) & 0xFFu) == static_cast<uint32_t>(logReg))
@@ -9340,7 +9527,11 @@ namespace sotc_native
             if (!g_s4Hook.async2d)
                 hookJoin(hookjobs::k_gsreg_2d);
             g_2dDefer = g_s4Hook.async2d;
-            feed2D(GPR_U32(ctx, 4) & 0xFFu, GPR_U64(ctx, 5));
+            {
+                const Wide2DCall wide2D(ra, false);
+                const CensusCaller census(ra);
+                feed2D(GPR_U32(ctx, 4) & 0xFFu, GPR_U64(ctx, 5));
+            }
             g_2dDefer = false;
             break;
         }

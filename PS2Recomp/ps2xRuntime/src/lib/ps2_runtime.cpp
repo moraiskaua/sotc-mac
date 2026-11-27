@@ -10,6 +10,7 @@
 #include "runtime/ps2_vu1_native.h"
 #include "ps2_runtime.h"
 #include "runtime/native_renderer.h"
+#include "runtime/widescreen.h"
 #include <filesystem>
 #include "runtime/native_tuning.h"
 #include "runtime/host_menu.h"
@@ -3190,8 +3191,17 @@ void PS2Runtime::run()
             const float srcHeight = static_cast<float>(std::max<uint32_t>(1u, presentHeight));
             const float screenWidth = static_cast<float>(GetScreenWidth());
             const float screenHeight = static_cast<float>(GetScreenHeight());
-            // The PS2 picture is 4:3 whatever its pixel size (512x448, 640x448...).
-            const float aspect = 4.0f / 3.0f;
+            // The PS2 picture is 4:3 whatever its pixel size (512x448, 640x448...);
+            // in the game's wide mode (runtime/widescreen.h, Graphics "Widescreen"),
+            // the window's own aspect, which the picture was drawn for.
+            native_renderer::setWindowAspect(widescreen::screenAspect(GetScreenWidth(), GetScreenHeight()));
+            // The native picture: the aspect it was drawn for, from its own size (a
+            // frame finished before a toggle keeps its own); the emulated one: the
+            // aspect the game is in now.
+            const float wideAspect = native_renderer::wideAspect();
+            const float aspect = native_renderer::shown() ? widescreen::frameAspect(presentWidth, presentHeight)
+                                 : wideAspect > 0.0f  ? wideAspect
+                                                      : 4.0f / 3.0f;
             const int screenMode = hostmenu::settings().screenMode.load(std::memory_order_relaxed);
             float dstWidth = std::min(screenWidth, screenHeight * aspect);
             float dstHeight = dstWidth / aspect;
@@ -3534,6 +3544,27 @@ void PS2Runtime::run()
             // drawn every frame, so the flip is instant; with SOTC_NATIVE=1 the
             // GS starts drawing again when its picture is asked for.
             static const bool bothDrawn = std::getenv("SOTC_NATIVE") && std::atoi(std::getenv("SOTC_NATIVE")) == 2;
+#if !defined(PLATFORM_VITA)
+            // F11: the window fills the screen (borderless) or comes back. (Not
+            // Alt+Enter: Enter is the keyboard's Start, the game would pause.)
+            if (IsKeyPressed(KEY_F11))
+                ToggleBorderlessWindowed();
+            // Widescreen just turned on in a window narrower than 16:9 (the
+            // default one is the PS2's frame): the window made 16:9, same height,
+            // unless it is maximised or filling the screen (it is followed as it is).
+            static bool wideBefore = false;
+            const bool wideNow = native_renderer::tuning().widescreen;
+            if (wideNow && !wideBefore && !IsWindowMaximized() && !IsWindowFullscreen() && !IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE))
+            {
+                int height = GetScreenHeight();
+                const int monitorWidth = GetMonitorWidth(GetCurrentMonitor());
+                if (monitorWidth > 0 && height * 16 / 9 > monitorWidth)
+                    height = monitorWidth * 9 / 16; // no wider than the monitor
+                if (height > 0 && GetScreenWidth() * 9 < height * 16)
+                    SetWindowSize(height * 16 / 9, height);
+            }
+            wideBefore = wideNow;
+#endif
             // A controller connected after the start: logged (its GUID when unmapped).
             static uint32_t padPoll = 0;
             if (++padPoll % 60u == 0u)

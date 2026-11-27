@@ -50,7 +50,7 @@ reflection detail) is what exists so far (STATUS.md, Settings).
 
 | # | Item | Feasibility |
 |---|------|-------------|
-| 20 | Widescreen 16:9 (hor+) | medium-hard: the projection is easy to widen, but the game culls models and parts against its 4:3 frustum (things would pop in at the sides), 2D, fades and cinema bars are laid out in 512 x 448, and the screen copies (refraction, haze, bloom mask, DoF) assume that frame; each needs its own fix |
+| 20 | Widescreen 16:9 (hor+) | done (Mac): Graphics "Widescreen" (`SOTC_WIDESCREEN=1`) forces the game's own 16:9 mode and widens it to the window (4:3 to 21:9), the 2D squeezed back by its drawer (HUD at the edges, menus centred, fades full width); F11 full screen. [docs/widescreen.md](widescreen.md) |
 | 21 | Texture replacement packs (upscaled textures) by content hash | done (Mac): Graphics "Texture pack" (`SOTC_TEXTURE_PACK=1`) draws `textures/pack/<id>.png` over a texture, same size or 2x / 4x / 8x, mips by a box filter; Debug "Dump textures" (`SOTC_TEXTURE_DUMP=1`) writes `textures/dump/<id>.png`. The id is a hash of the decoded level 0, stable across runs. [docs/texture_packs.md](texture_packs.md) |
 | 22 | Longer draw distance | hard: what is drawn far is the game's choice (its own culling, fog distances and LOD tables); pushing the fog out shows the edges of what it loads |
 | 23 | Better shadows (shadow maps for the world) | hard: the game has character shadow volumes only; world shadows are baked into vertex colours, so new ones would double them |

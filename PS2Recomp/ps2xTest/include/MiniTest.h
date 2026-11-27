@@ -120,7 +120,8 @@ public:
         m_beforeEach = fn;
     }
 
-    static int Run()
+    // only: the one suite to run (ps2x_tests <suite>); empty: every suite.
+    static int Run(const std::string& only = "")
     {
         int failedCount = 0;
         int totalTests = 0;
@@ -128,6 +129,8 @@ public:
         for (auto& c : m_cases)
         {
             const std::string& suiteName = c.first;
+            if (!only.empty() && suiteName != only)
+                continue;
             const TestCaseCallback& suiteCallback = c.second;
 
             std::cout << "\n[Suite]: " << suiteName << std::endl;
