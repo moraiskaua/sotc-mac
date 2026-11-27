@@ -2,7 +2,7 @@
 # The ps2x_tests suites the CI runs (.github/workflows/tests.yml), also by hand:
 #
 #   tools/ci_tests.sh [build_dir]            configure if needed, build ps2x_tests, run the gate
-#   tools/ci_tests.sh [build_dir] --report   also run the known-failing suites (never fails)
+#   tools/ci_tests.sh [build_dir] --report   only the known-failing suites, reported (never fails)
 #   CI_CMAKE_ARGS="..."                       extra CMake configure arguments
 #
 # The gate: the suites that pass on the Mac today; any failure fails the run.
@@ -47,19 +47,19 @@ run() { # suite -> "passed failed" (or "crash")
 }
 
 status=0
-echo "== gate"
-for s in $GATE; do
-    case "$SUITES" in *" $s "*) ;; *) echo "  $s: not on this branch, skipped"; continue ;; esac
-    r=$(run "$s")
-    if [ "$r" = "crash" ] || [ "${r#* }" != 0 ]; then
-        echo "  $s: FAILED ($r)"
-        status=1
-    else
-        echo "  $s: ${r% *} passed"
-    fi
-done
-
-if [ "$REPORT" = 1 ]; then
+if [ "$REPORT" = 0 ]; then
+    echo "== gate"
+    for s in $GATE; do
+        case "$SUITES" in *" $s "*) ;; *) echo "  $s: not on this branch, skipped"; continue ;; esac
+        r=$(run "$s")
+        if [ "$r" = "crash" ] || [ "${r#* }" != 0 ]; then
+            echo "  $s: FAILED ($r)"
+            status=1
+        else
+            echo "  $s: ${r% *} passed"
+        fi
+    done
+else
     echo "== known failing (report only, issue #39)"
     for s in $KNOWN_FAILING; do
         case "$SUITES" in *" $s "*) ;; *) continue ;; esac
