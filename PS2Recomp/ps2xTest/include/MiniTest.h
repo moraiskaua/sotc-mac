@@ -120,7 +120,6 @@ public:
         m_beforeEach = fn;
     }
 
-    // only: the one suite to run (ps2x_tests <suite>); empty: every suite.
     // The suites' names, one a line (ps2x_tests --list).
     static void List()
     {
@@ -128,6 +127,7 @@ public:
             std::cout << c.first << std::endl;
     }
 
+    // only: the one suite to run (ps2x_tests <suite>; 1 when there is none); empty: every suite.
     static int Run(const std::string& only = "")
     {
         int suitesRun = 0;
