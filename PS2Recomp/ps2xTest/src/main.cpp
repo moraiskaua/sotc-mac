@@ -44,7 +44,13 @@ int main(int argc, char **argv)
     register_ps2_runtime_expansion_tests();
     register_texture_pack_tests();
     register_widescreen_tests();
-    int res = MiniTest::Run(argc > 1 ? argv[1] : ""); // ps2x_tests <suite>: that suite only
+    if (argc > 1 && std::string(argv[1]) == "--list") // the suites' names (tools/ci_tests.sh)
+    {
+        MiniTest::List();
+        std::cout.flush();
+        std::_Exit(0);
+    }
+    int res = MiniTest::Run(argc > 1 ? argv[1] : ""); // ps2x_tests <suite>: that suite only (1 when there is none)
     std::cout.flush();
     std::cerr.flush();
     std::_Exit(res);
