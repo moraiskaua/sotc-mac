@@ -3,6 +3,7 @@
 #
 #   tools/ci_tests.sh [build_dir]            configure if needed, build ps2x_tests, run the gate
 #   tools/ci_tests.sh [build_dir] --report   also run the known-failing suites (never fails)
+#   CI_CMAKE_ARGS="..."                       extra CMake configure arguments
 #
 # The gate: the suites that pass on the Mac today; any failure fails the run.
 # The rest fail or crash on the Mac before this script (issue #39 of the fork:
@@ -20,8 +21,11 @@ GATE="ElfAnalyzerHeuristics PadInput PS2IopSubsystem PS2RuntimeIO PS2VU0Math R59
 KNOWN_FAILING="CodeGenerator PS2GS PS2Memory PS2Recompiler PS2RuntimeExpansion PS2RuntimeInterrupt PS2RuntimeKernel PS2SifDma PS2SifRpc PS2VU1"
 
 if [ ! -f "$BUILD/build.ninja" ]; then
+    # No FFmpeg: the tests decode no video, and it is one dependency less to install.
+    # shellcheck disable=SC2086
     cmake -S PS2Recomp -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-        -DPS2X_BUILD_TEST=ON -DPS2X_BUILD_ANALYZER=ON -DPS2X_BUILD_STUDIO=OFF || exit 1
+        -DPS2X_BUILD_TEST=ON -DPS2X_BUILD_ANALYZER=ON -DPS2X_BUILD_STUDIO=OFF \
+        -DPS2X_ENABLE_FFMPEG=OFF ${CI_CMAKE_ARGS:-} || exit 1
 fi
 cmake --build "$BUILD" --target ps2x_tests || exit 1
 TESTS=$(cd "$BUILD/ps2xTest" && pwd)/ps2x_tests
