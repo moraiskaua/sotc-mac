@@ -797,7 +797,7 @@ namespace native_renderer
             {"texture_filter", 2, "Cost: GPU, small (texture reads).", "Custo: GPU, pequeno (leitura de texturas)."},
             {"texture_pack", 9, "Cost: GPU memory (bigger pictures) and reading the PNGs when an area loads.",
              "Custo: memória da GPU (imagens maiores) e a leitura dos PNGs quando uma área carrega."},
-            {"widescreen", 2, "Cost: GPU (a third more pixels).", "Custo: GPU (um terço a mais de pixels)."},
+            {"widescreen", 9, "Cost: GPU (a third more pixels).", "Custo: GPU (um terço a mais de pixels)."},
             {"msaa", 2, nullptr, nullptr},
             {"effect_detail", 2, nullptr, nullptr},
             {"bloom", 3, "Cost: GPU (the bloom chain's small passes and a full-screen composite).", "Custo: GPU (as passadas pequenas do bloom e uma composição na tela inteira)."},
@@ -865,9 +865,10 @@ namespace native_renderer
         }
 #if defined(__vita__)
         // Mac only (texture packs, runtime/texture_pack.h: no PNG reader in the
-        // Vita's SDL2 shim): not offered on the Vita.
+        // Vita's SDL2 shim; widescreen, runtime/widescreen.h): not offered on the Vita.
         v.erase(std::remove_if(v.begin(), v.end(), [](const TuningItem &item)
-                               { return !std::strcmp(item.key, "texture_pack") || !std::strcmp(item.key, "dbg_texture_dump"); }),
+                               { return !std::strcmp(item.key, "texture_pack") || !std::strcmp(item.key, "dbg_texture_dump") ||
+                                        !std::strcmp(item.key, "widescreen"); }),
                 v.end());
 #endif
         return v;
