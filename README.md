@@ -103,7 +103,12 @@ A tabela completa dos ajustes do F10 está em
 
 ### Controles
 
-Gamepad funciona direto. No teclado:
+Gamepad funciona direto, inclusive o 8BitDo Ultimate 2 por Bluetooth. Um
+controle que o jogo não reconhece aparece no `logs/play.log` como
+`[pad] controller ... has no gamepad mapping` com o GUID dele: coloque a linha
+desse GUID do [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB)
+num `gamecontrollerdb.txt` na pasta do jogo (ou aponte `PS2X_GAMEPAD_DB` pra
+ele). No teclado:
 
 | Teclas | PS2 |
 | --- | --- |
